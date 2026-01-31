@@ -40,6 +40,11 @@ const editorDiffHighlights = {
   right: new Map(),
 };
 
+const inlineDiffHighlights = {
+  left: new Map(),
+  right: new Map(),
+};
+
 // Sample text data
 const sampleOriginal = `Release Notes - v2.3.1
 
@@ -120,14 +125,15 @@ function updateHighlights(side) {
   const editor = editors[side];
   const highlightsEl = highlights[side];
   const lines = normalizeLineEndings(editor.value).split("\n");
-
+  
   let html = "";
   lines.forEach((line, index) => {
     const diffClass = editorDiffHighlights[side].get(index) || "";
-    const escapedLine = escapeHtml(line) || " ";
+    const inline = inlineDiffHighlights[side].get(index);
+    const escapedLine = inline !== undefined ? (inline || " ") : (escapeHtml(line) || " ");
     html += `<div class="highlight-line ${diffClass}">${escapedLine}</div>`;
   });
-
+  
   highlightsEl.innerHTML = html;
 }
 
@@ -237,6 +243,19 @@ function normalizeText(side) {
   scheduleCompare();
 }
 
+function trimTextEdges(side) {
+  const value = getValue(side);
+  if (!value.trim()) {
+    showToast("Nothing to trim", "error");
+    return;
+  }
+
+  const trimmed = normalizeLineEndings(value).replace(/^\s+|\s+$/g, "");
+  setValue(side, trimmed);
+  showToast("Leading/trailing whitespace trimmed", "success");
+  scheduleCompare();
+}
+
 function undoText(side) {
   const editor = editors[side];
   if (!editor) return;
@@ -329,91 +348,126 @@ function compareText() {
   const rightValue = normalizeLineEndings(getValue("right"));
   const leftLines = leftValue.split("\n");
   const rightLines = rightValue.split("\n");
-
-  const ops = myersDiff(leftLines, rightLines);
-  const blocks = groupOps(ops);
-  const stats = applyDiffHighlightsFromBlocks(blocks);
+  
+  const ops = diffSequence(leftLines, rightLines);
+  const stats = applyLineOps(ops);
   updateDiffStats(stats);
 }
 
 function clearDiffHighlights(side) {
   editorDiffHighlights[side].clear();
+  inlineDiffHighlights[side].clear();
 }
 
 function addDiffHighlight(side, lineIndex, status) {
   if (typeof lineIndex !== "number" || lineIndex < 0) return;
-
+  
   const className =
     status === "missing" ? "line-diff-missing" :
     status === "addition" ? "line-diff-addition" :
     status === "modified" ? "line-diff-modified" : "";
-
+  
   if (className) {
     editorDiffHighlights[side].set(lineIndex, className);
   }
 }
 
-function applyDiffHighlightsFromBlocks(blocks) {
+function setInlineDiffHighlight(side, lineIndex, html) {
+  if (typeof lineIndex !== "number" || lineIndex < 0) return;
+  inlineDiffHighlights[side].set(lineIndex, html);
+}
+
+function buildCharDiff(leftLine, rightLine) {
+  if (leftLine === rightLine) return null;
+  
+  const leftChars = Array.from(leftLine);
+  const rightChars = Array.from(rightLine);
+  const leftLength = leftChars.length;
+  const rightLength = rightChars.length;
+
+  let start = 0;
+  while (start < leftLength && start < rightLength && leftChars[start] === rightChars[start]) {
+    start += 1;
+  }
+
+  let endLeft = leftLength - 1;
+  let endRight = rightLength - 1;
+  while (endLeft >= start && endRight >= start && leftChars[endLeft] === rightChars[endRight]) {
+    endLeft -= 1;
+    endRight -= 1;
+  }
+
+  const prefix = leftChars.slice(0, start).join("");
+  const leftMid = leftChars.slice(start, endLeft + 1).join("");
+  const rightMid = rightChars.slice(start, endRight + 1).join("");
+  const suffix = leftChars.slice(endLeft + 1).join("");
+
+  const leftHtml = `${escapeHtml(prefix)}${leftMid ? `<span class="word-diff word-diff-modified">${escapeHtml(leftMid)}</span>` : ""}${escapeHtml(suffix)}`;
+  const rightHtml = `${escapeHtml(prefix)}${rightMid ? `<span class="word-diff word-diff-modified">${escapeHtml(rightMid)}</span>` : ""}${escapeHtml(suffix)}`;
+
+  return { leftHtml, rightHtml };
+}
+
+function applyLineOps(ops) {
   clearDiffHighlights("left");
   clearDiffHighlights("right");
-
+  
   let leftIndex = 0;
   let rightIndex = 0;
   const stats = { added: 0, removed: 0, modified: 0 };
 
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
+  let pendingDeletes = [];
+  let pendingInserts = [];
 
-    if (block.type === "equal") {
-      leftIndex += block.lines.length;
-      rightIndex += block.lines.length;
-      continue;
-    }
+  const flushPending = () => {
+    const pairCount = Math.min(pendingDeletes.length, pendingInserts.length);
 
-    if (block.type === "delete" && blocks[i + 1]?.type === "insert") {
-      const removedLines = block.lines;
-      const addedLines = blocks[i + 1].lines;
-      const pairCount = Math.min(removedLines.length, addedLines.length);
-
-      for (let j = 0; j < pairCount; j++) {
-        addDiffHighlight("left", leftIndex + j, "modified");
-        addDiffHighlight("right", rightIndex + j, "modified");
+    for (let p = 0; p < pairCount; p++) {
+      const del = pendingDeletes[p];
+      const ins = pendingInserts[p];
+      const charDiff = buildCharDiff(del.line, ins.line);
+      if (charDiff) {
+        setInlineDiffHighlight("left", del.index, charDiff.leftHtml);
+        setInlineDiffHighlight("right", ins.index, charDiff.rightHtml);
         stats.modified += 1;
       }
-
-      for (let j = pairCount; j < removedLines.length; j++) {
-        addDiffHighlight("left", leftIndex + j, "missing");
-        stats.removed += 1;
-      }
-
-      for (let j = pairCount; j < addedLines.length; j++) {
-        addDiffHighlight("right", rightIndex + j, "addition");
-        stats.added += 1;
-      }
-
-      leftIndex += removedLines.length;
-      rightIndex += addedLines.length;
-      i += 1;
-      continue;
     }
 
-    if (block.type === "delete") {
-      block.lines.forEach(() => {
-        addDiffHighlight("left", leftIndex, "missing");
-        leftIndex += 1;
-        stats.removed += 1;
-      });
-      continue;
+    for (let p = pairCount; p < pendingDeletes.length; p++) {
+      addDiffHighlight("left", pendingDeletes[p].index, "missing");
+      stats.removed += 1;
     }
 
-    if (block.type === "insert") {
-      block.lines.forEach(() => {
-        addDiffHighlight("right", rightIndex, "addition");
-        rightIndex += 1;
-        stats.added += 1;
-      });
+    for (let p = pairCount; p < pendingInserts.length; p++) {
+      addDiffHighlight("right", pendingInserts[p].index, "addition");
+      stats.added += 1;
     }
-  }
+
+    pendingDeletes = [];
+    pendingInserts = [];
+  };
+
+  ops.forEach((op) => {
+    if (op.type === "equal") {
+      flushPending();
+      leftIndex += 1;
+      rightIndex += 1;
+      return;
+    }
+
+    if (op.type === "delete") {
+      pendingDeletes.push({ line: op.line, index: leftIndex });
+      leftIndex += 1;
+      return;
+    }
+
+    if (op.type === "insert") {
+      pendingInserts.push({ line: op.line, index: rightIndex });
+      rightIndex += 1;
+    }
+  });
+
+  flushPending();
 
   updateLineNumbers("left");
   updateLineNumbers("right");
@@ -423,95 +477,48 @@ function applyDiffHighlightsFromBlocks(blocks) {
   return stats;
 }
 
-function groupOps(ops) {
-  const blocks = [];
-  ops.forEach((op) => {
-    const last = blocks[blocks.length - 1];
-    if (last && last.type === op.type) {
-      last.lines.push(op.line);
-    } else {
-      blocks.push({ type: op.type, lines: [op.line] });
-    }
-  });
-  return blocks;
-}
+// ==================== LCS Diff ====================
 
-// ==================== Myers Diff ====================
-
-function myersDiff(a, b) {
+function diffSequence(a, b) {
   const n = a.length;
   const m = b.length;
-  const max = n + m;
-  const size = 2 * max + 1;
-  const offset = max;
-  let v = new Array(size).fill(0);
-  const trace = [];
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
 
-  for (let d = 0; d <= max; d++) {
-    trace.push(v.slice());
-    for (let k = -d; k <= d; k += 2) {
-      const kIndex = offset + k;
-      let x;
-
-      if (k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1])) {
-        x = v[offset + k + 1];
-      } else {
-        x = v[offset + k - 1] + 1;
-      }
-
-      let y = x - k;
-      while (x < n && y < m && a[x] === b[y]) {
-        x += 1;
-        y += 1;
-      }
-
-      v[kIndex] = x;
-
-      if (x >= n && y >= m) {
-        trace.push(v.slice());
-        return backtrack(trace, a, b, offset);
-      }
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
 
-  return [];
-}
+  const ops = [];
+  let i = 0;
+  let j = 0;
 
-function backtrack(trace, a, b, offset) {
-  let x = a.length;
-  let y = b.length;
-  const edits = [];
-
-  for (let d = trace.length - 1; d > 0; d--) {
-    const v = trace[d - 1];
-    const k = x - y;
-    let prevK;
-
-    if (k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1])) {
-      prevK = k + 1;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      ops.push({ type: "equal", line: a[i] });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      ops.push({ type: "delete", line: a[i] });
+      i += 1;
     } else {
-      prevK = k - 1;
-    }
-
-    const prevX = v[offset + prevK];
-    const prevY = prevX - prevK;
-
-    while (x > prevX && y > prevY) {
-      edits.push({ type: "equal", line: a[x - 1] });
-      x -= 1;
-      y -= 1;
-    }
-
-    if (x === prevX) {
-      edits.push({ type: "insert", line: b[y - 1] });
-      y -= 1;
-    } else {
-      edits.push({ type: "delete", line: a[x - 1] });
-      x -= 1;
+      ops.push({ type: "insert", line: b[j] });
+      j += 1;
     }
   }
 
-  return edits.reverse();
+  while (i < n) {
+    ops.push({ type: "delete", line: a[i] });
+    i += 1;
+  }
+
+  while (j < m) {
+    ops.push({ type: "insert", line: b[j] });
+    j += 1;
+  }
+
+  return ops;
 }
 
 // ==================== Event Handlers ====================
@@ -529,6 +536,9 @@ document.querySelectorAll(".action-btn[data-action]").forEach((btn) => {
         break;
       case "normalize":
         normalizeText(side);
+        break;
+      case "trim":
+        trimTextEdges(side);
         break;
       case "copy":
         copyText(side);

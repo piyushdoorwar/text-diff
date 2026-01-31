@@ -564,8 +564,8 @@ body::before {
     content: attr(data-tooltip);
     position: absolute;
     top: calc(100% + 10px);
-    left: 50%;
-    transform: translateX(-50%) translateY(4px);
+    right: 0;
+    transform: translateY(4px);
     padding: 0.45rem 0.75rem;
     background: rgba(37, 37, 37, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.10);
@@ -586,8 +586,8 @@ body::before {
     content: '';
     position: absolute;
     top: calc(100% + 4px);
-    left: 50%;
-    transform: translateX(-50%) translateY(4px) rotate(45deg);
+    right: 14px;
+    transform: translateY(4px) rotate(45deg);
     width: 10px;
     height: 10px;
     background: rgba(37, 37, 37, 0.95);
@@ -604,7 +604,7 @@ body::before {
 .action-btn[data-tooltip]:hover::before {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
 }
 
 .action-btn[data-tooltip]:disabled::after,
@@ -718,8 +718,8 @@ body::before {
     content: attr(data-tooltip);
     position: absolute;
     top: calc(100% + 10px);
-    left: 50%;
-    transform: translateX(-50%) translateY(4px);
+    right: 0;
+    transform: translateY(4px);
     padding: 0.45rem 0.75rem;
     background: rgba(37, 37, 37, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.10);
@@ -740,8 +740,8 @@ body::before {
     content: '';
     position: absolute;
     top: calc(100% + 4px);
-    left: 50%;
-    transform: translateX(-50%) translateY(4px) rotate(45deg);
+    right: 14px;
+    transform: translateY(4px) rotate(45deg);
     width: 10px;
     height: 10px;
     background: rgba(37, 37, 37, 0.95);
@@ -758,7 +758,7 @@ body::before {
 .info-btn[data-tooltip]:hover::before {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
 }
 
 .stat-item {
@@ -938,6 +938,23 @@ body::before {
 .line-number.line-diff-minor {
     color: var(--accent-orange);
     font-weight: 600;
+}
+
+/* Inline word-level highlights */
+.word-diff {
+    display: inline-block;
+    padding: 0 2px;
+    border-radius: 4px;
+}
+
+.word-diff-added {
+    background-color: var(--diff-added);
+    box-shadow: inset 0 0 0 1px var(--diff-added-border);
+}
+
+.word-diff-removed {
+    background-color: rgba(255, 107, 157, 0.28);
+    box-shadow: inset 0 0 0 1px var(--diff-removed-border);
 }
 
 /* ==================== Modal Styles ==================== */
