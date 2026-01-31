@@ -243,19 +243,6 @@ function normalizeText(side) {
   scheduleCompare();
 }
 
-function trimTextEdges(side) {
-  const value = getValue(side);
-  if (!value.trim()) {
-    showToast("Nothing to trim", "error");
-    return;
-  }
-
-  const trimmed = normalizeLineEndings(value).replace(/^\s+|\s+$/g, "");
-  setValue(side, trimmed);
-  showToast("Leading/trailing whitespace trimmed", "success");
-  scheduleCompare();
-}
-
 function undoText(side) {
   const editor = editors[side];
   if (!editor) return;
@@ -536,9 +523,6 @@ document.querySelectorAll(".action-btn[data-action]").forEach((btn) => {
         break;
       case "normalize":
         normalizeText(side);
-        break;
-      case "trim":
-        trimTextEdges(side);
         break;
       case "copy":
         copyText(side);

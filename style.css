@@ -957,6 +957,11 @@ body::before {
     box-shadow: inset 0 0 0 1px var(--diff-removed-border);
 }
 
+.word-diff-modified {
+    background-color: var(--diff-modified);
+    box-shadow: inset 0 0 0 1px var(--diff-modified-border);
+}
+
 /* ==================== Modal Styles ==================== */
 .modal-overlay {
     position: fixed;
